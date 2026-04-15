@@ -1,0 +1,52 @@
+name: Multi-Tenant Deployment
+on:
+   push:
+   workflow_dispatch:
+
+jobs:
+  deploy-tenants:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - city: "salatiga"
+            port: "7750"
+          - city: "jepara"
+            port: "7751"
+          - city: "kudus"
+          - port: "7753"
+
+    steps:
+      - name: Deploying to ${{ matrix.city }}
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.A10_PROD_IP }}
+          username: sanadanosa
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          fingerprint: ""
+          script: |
+            CITY="${{ matrix.city }}"
+            PORT="${{ matrix.port }}"
+            DIR_NAME="BACKEND_${CITY,,}"
+            CONTAINER_NAME="${CITY}_backend"
+
+            echo "Updating $CITY on port $PORT..."
+
+            cd "/aplikasi/$DIR_NAME"
+
+            git pull origin main
+
+            docker build -t $CONTAINER_NAME .
+
+            docker stop $CONTAINER_NAME || true
+            docker rm -f $CONTAINER_NAME || true
+
+            docker run -d \
+              -p "$PORT:5000" \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              "$CONTAINER_NAME"
+
+            echo "[SUCCESS] updated $CITY!"

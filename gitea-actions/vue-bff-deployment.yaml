@@ -1,0 +1,59 @@
+name: Multi-Tenant FE Deployment
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - city: "salatiga"
+            fe_port: "4750"
+
+    steps:
+      - name: Deploying FE to ${{ matrix.city }}
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.A10_PROD_IP }}
+          username: sanadanosa
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            CITY="${{ matrix.city }}"
+            FE_PORT="${{ matrix.fe_port }}"
+            DIR_NAME="FRONTEND_${CITY,,}"
+            CONTAINER_NAME="${CITY}_frontend" # Or whatever your FE naming is
+
+            echo "Starting FE Buildx for $CITY"
+
+            cd "/aplikasi/$DIR_NAME"
+
+
+            git fetch --all
+            git reset --hard origin/main
+
+
+            D_FILE="Dockerfile"
+            [ -f "dockerfile" ] && D_FILE="dockerfile"
+
+            echo "Building with low_res_builder..."
+            docker buildx build \
+              --builder low_res_builderhaha \
+              -t "$CONTAINER_NAME:latest" \
+              -f "$D_FILE" \
+              --load .
+
+            echo "Swapping to Port $FE_PORT..."
+            docker stop "$CONTAINER_NAME" || true
+            docker rm -f "$CONTAINER_NAME" || true
+
+            docker run -d \
+              -p "$FE_PORT:5000" \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              "$CONTAINER_NAME:latest"
+
+            echo " [SUCCESS] updated $CITY FE at $FE_PORT ---"
